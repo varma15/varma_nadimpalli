@@ -1,0 +1,231 @@
+#Read the data 
+
+```{r}
+getwd("~/Downloads/spambase")
+spamdata<-read.table("~/Downloads/spambase/spambase.data",header = T,sep=",")
+```
+#missing values
+```{r}
+sum(is.na(spamdata))
+```
+Bar plots of the data.
+```{r}
+par(mfrow=c(1,2))#to show 2 charts at a time
+par(mfrow=c(1,1))
+barplot(table(spamdata$X1),main="number of spam and not spam")
+barplot(table(spamdata$X0.1))
+barplot(table(spamdata$X0))
+barplot(table(spamdata$X0.64))
+barplot(table(spamdata$X0.64.1))
+barplot(table(spamdata$X0.32))
+barplot(table(spamdata$X0.2))
+barplot(table(spamdata$X0.3))
+cor(spamdata)
+library(corrplot)
+corrplot(cor(spamdata),method = 'number')
+
+```
+summary and structure of data
+```{r}
+summary(spamdata)
+str(spamdata)
+```
+class variable into factor.
+```{r}
+spamdata$X1<-as.factor(spamdata$X1)
+str(spamdata)
+```
+split the data into test and train
+```{r}
+#install.packages("caret")
+library(caret)
+set.seed(555)
+train_rows <- createDataPartition(spamdata$X1, p = 0.7, list = F)
+train_data <- spamdata[train_rows, ]
+test_data <- spamdata[-train_rows, ]
+```
+standardise data
+```{r}
+std_method <- preProcess(train_data, method = c("center", "scale"))
+
+train_data <- predict(std_method, train_data)
+  
+test_data <- predict(std_method, test_data)
+
+```
+step aic in R
+```{r}
+
+```
+
+
+run logistic model
+```{r}
+attach(spamdata)
+log_reg <- glm(X1~., data = train_data, family = binomial)
+```
+summary of log_reg
+```{r}
+summary(log_reg)
+
+```
+
+```{r}
+library(MASS)
+```
+
+list of predictions using the pred function
+```{r}
+prob_train <- predict(log_reg, type = "response")
+prob_train
+```
+2) Using the ROCR package create a "prediction()" object
+
+```{r}
+library(ROCR)
+library(gplots)
+pred <- prediction(prob_train, train_data$X1)
+pred
+```
+3) Extract performance measures (True Positive Rate and False Positive Rate) using the "performance()" function from the ROCR package
+```{r}
+perf <- performance(pred, measure="tpr", x.measure="fpr")
+perf
+```
+4) Plot the ROC curve using the extracted performance measures (TPR and FPR)
+```{r}
+plot(perf, col=rainbow(10), colorize=T, print.cutoffs.at=seq(0,1,0.05))
+```
+* Extract the AUC score of the ROC curve and store it in a variable named "auc"
+```{r}
+perf_auc <- performance(pred, measure="auc")
+
+auc <- perf_auc@y.values[[1]]
+print(auc)
+```
+## Predictions on test data
+
+* After choosing a cutoff value, predict the class labels on the test data using our model
+```{r}
+prob_test <- predict(log_reg, test_data, type = "response")
+
+preds_test <- ifelse(prob_test > 0.8, "1", "0")
+```
+confusion matrix
+```{r}
+test_data_labs <-test_data$X1
+
+conf_matrix <- table(test_data_labs, preds_test)
+
+print(conf_matrix)
+#install.packages('e1071',dependencies = T)
+library(e1071)
+library(caret)
+confusionMatrix(test_data_labs,preds_test,positive = "1")
+```
+Neural network.
+```{r}
+library(mxnet)
+train.x = data.matrix(spamdata[train_rows, -58])
+train.y = spamdata[train_rows, 58]
+test.x = data.matrix(spamdata[-train_rows, -51])
+test.y = spamdata[-train_rows, 51]
+mx.set.seed(0)
+Sys.time() -> start
+model <- mx.mlp(train.x, train.y, hidden_node=c(2), out_node=2, activation="tanh", out_activation="softmax",
+                 num.round=20, array.batch.size=100, learning.rate=0.1, momentum=0.7,
+                 eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model, test.x)
+
+preds=t(preds)
+pred.label = ifelse(preds[,2]>0.75, 0, 1)
+
+conf.mat = table(pred.label, test.y)
+accuracy = sum(diag(conf.mat))/sum(conf.mat);accuracy
+precision = conf.mat[2,2]/sum(conf.mat[2,]);precision
+recall = conf.mat[2,2]/sum(conf.mat[,2]);recall
+
+table(test.y)
+```
+SVM
+```{r}
+library(e1071)
+
+model_svm <- svm(X1 ~ . , train_data, kernel = "linear")
+
+summary(model_svm)
+
+preds_svm <- predict(model_svm, test_data)
+test_lab<-test_data$X1
+confusionMatrix(preds_svm, test_lab)
+
+preds_train_svm <- predict(model_svm)
+```
+Random Forest
+```{r}
+
+library(randomForest)
+model_rf <- randomForest(X1 ~ . , train_data)
+preds_rf <- predict(model_rf, test_data)
+
+confusionMatrix(preds_rf, test_data$X1)
+
+preds_train_rf <- predict(model_rf)
+```
+KNN classifier
+```{r}
+
+model_knn <- knn3(X1 ~ . , train_data, k =75)
+
+preds_k <- predict(model_knn, test_data)
+
+preds_knn <- ifelse(preds_k[, 1] > preds_k[, 2], 0, 1)
+
+confusionMatrix(preds_knn, test_data$X1)
+
+
+```
+GBM 
+```{r}
+train_data$X1 <- as.numeric(as.character(train_data$X1))
+
+test_data$X1 <- as.numeric(as.character(test_data$X1))
+library(gbm)
+model_gbm <-gbm(X1 ~ . , cv.folds = 8, interaction.depth = 3,shrinkage =0.005,distribution='bernoulli',data=train_data, n.trees = 1500)
+gbm.perf(model_gbm)
+preds_g <- predict(model_gbm, type = 'response')
+#install.packages("pROC")
+library(pROC)
+#install.packages("caret")
+library(caret)
+gbm_roc <- roc(train_data$X1, preds_g)
+cutoff_gbm <- coords(gbm_roc, "best", ret = "threshold")
+preds_train_gbm <- ifelse(preds_g >= cutoff_gbm, 1, 0)
+
+preds_test_g <- predict(model_gbm, test_data, type = 'response')
+preds_gbm <- ifelse(preds_test_g >= cutoff_gbm, 1, 0)
+preds_test_g 
+confusionMatrix(preds_gbm, test_data$X1)
+
+
+
+```
+Decision trees
+```{r}
+library(rpart)
+# grow tree 
+fit <- rpart(X1 ~ ., data = train_data,method="class")
+preds_r <- predict(fit, type = 'response')
+
+summary(fit)
+#Predict Output 
+predicted= predict(fit,test_data)
+preds_train_dec <- ifelse(predicted[,2] >= .5, 1, 0)
+
+confusionMatrix(preds_train_dec, test_data$X1)
+
+```
+
