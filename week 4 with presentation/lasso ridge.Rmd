@@ -1,0 +1,157 @@
+#Read the data 
+
+```{r}
+rm(list = ls())
+
+setwd("~/Downloads/spambase")
+spamdata<-read.table("~/Downloads/spambase/spambase.data",header = T,sep=",")
+write.csv(spamdata,file="spamdata.csv",row.names = F)
+library(glmnet)
+library(caret)
+library(MASS)
+library(vegan)
+library(data.table)
+library(doParallel)
+library(DMwR)
+library(dummies)
+
+```
+#missing values
+```{r}
+sum(is.na(spamdata))
+spamdata$X1<-as.factor(spamdata$X1)
+str(spamdata)
+
+```
+#Bar plots of the data.
+```{r}
+par(mfrow=c(1,1))
+counts <- table(X1,X0.1)
+par(mfrow=c(1,2))#to show 2 charts at a time
+par(mfrow=c(1,1))
+barplot(table(spamdata$X1),main="number of spam and not spam")
+barplot(table(spamdata$X0.1))
+barplot(table(spamdata$X0))
+barplot(table(spamdata$X0.64))
+barplot(table(spamdata$X0.64.1))
+barplot(table(spamdata$X0.32))
+barplot(table(spamdata$X0.2))
+barplot(table(spamdata$X0.3))
+cor(spamdata)
+spamdata1<-subset(spamdata,select=-c(X1))
+library(corrplot)
+corrplot(cor(spamdata1),method = "color")
+plot(spamdata$X1)X1
+
+```
+#summary and structure of data
+```{r}
+#install.packages("fBasics")
+library(fBasics)
+x<-data.frame(basicStats(spamdata))
+#write.csv(x,"descriptive statistics.csv",row.names = F)
+```
+#class variable into factor.
+```{r}
+spamdata$X1<-as.factor(spamdata$X1)
+str(spamdata)
+```
+#split the data into test and train
+```{r}
+#install.packages("caret")
+library(caret)
+set.seed(555)
+train_rows <- createDataPartition(spamdata$X1, p = 0.7, list = F)
+train_data <- spamdata[train_rows, ]
+test_data <- spamdata[-train_rows, ]
+```
+#standardise data
+```{r}
+train_datanew=subset(train_data,select=-c(X1))
+test_datanew=subset(test_data,select=-c(X1))
+
+
+std_method <- preProcess(train_datanew,method = c("center","scale"))
+
+train_datanew <- predict(std_method, train_datanew)
+train_datanew<-as.data.frame(train_datanew)
+  
+test_datanew <- predict(std_method, test_datanew)
+test_datanew<-as.data.frame(test_datanew)
+plot(std_method, type = "l")
+summary(std_method)
+X1<-train_data$X1
+train_datanew1<-as.data.frame(cbind(train_datanew,X1))
+X1<-test_data$X1
+test_datanew1<-as.data.frame(cbind(test_datanew,X1))
+```
+LASSO
+```{r}
+x=model.matrix(train_datanew1$X1~.,train_datanew1)
+model=glmnet(x,train_datanew1$X1,family = "binomial")
+plot(model)
+model
+cv.model<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="binomial")
+plot(cv.model)
+cv.model$lambda.min
+newmodel=glmnet(x,train_datanew1$X1,family = "binomial",lambda = cv.model$lambda.min,type.multinomial="grouped")
+newmodel
+coef=coef(newmodel,s = cv.model$lambda.min)
+ ind <- which(coef!= 0)
+ df_lass0 <- data.frame(
+        feature=rownames(coef(newmodel, s=cv.model$lambda.min))[ind],
+        coeficient=(coef(newmodel, s=cv.model$lambda.min))[ind])
+ df_lass0
+ xx=model.matrix(test_datanew1$X1~.,test_datanew1)
+pred<-predict(newmodel,xx,type = "class")
+confusionMatrix(pred,test_datanew1$X1)
+ridge=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = 0)
+cv.ridge<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="multinomial",alpha=0)
+cv.ridge$lambda.min
+new_ridge=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = 0,lambda =cv.ridge$lambda.min )
+coef_ridge=as.data.frame(as.matrix(coef(new_ridge,s = cv.ridge$lambda.min)))
+ ind <- which(coef_ridge != 0)
+ ind
+ df_ridge <- data.frame(feature=rownames(coef(new_ridge, s=cv.ridge$lambda.min))[ind],coeficient=(coef(new_ridge, s=cv.ridge$lambda.min))[ind])
+
+ df_ridge
+ pred_ridge<-predict(new_ridge,xx,type = "class")
+confusionMatrix(pred_ridge,test_datanew1$X1)
+
+for(i in seq(from=0, to=1, by=0.05))
+{
+elastic=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = i)
+cv.elastic<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="binomial",alpha=i)
+new_elastic=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = i,lambda =cv.elastic$lambda.min )
+coef_elastic=coef(new_elastic,s = cv.elastic$lambda.min)
+ ind <- which(coef(new_elastic,s = cv.elastic$lambda.min) != 0)
+ df_elastic <- data.frame(
+        feature=rownames(coef(new_elastic, s=cv.elastic$lambda.min))[ind],
+        coeficient=(coef(new_elastic, s=cv.elastic$lambda.min))[ind])
+ df_elastic
+ pred_elastic<-predict(new_elastic,xx,type = "class")
+ y<-confusionMatrix(pred_elastic,test_datanew1$X1)
+ overall<-y$overall
+ overall.accuracy <- overall['Accuracy']
+ print(i)
+ print(overall.accuracy)
+}
+
+#best fit model 
+elastic=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = .55)
+cv.elastic<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="binomial",alpha=.55)
+cv.elastic$lambda.min
+new_elastic=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = 0,lambda =cv.elastic$lambda.min )
+coef_elastic=coef(new_elastic,s = cv.elastic$lambda.min)
+ ind <- which(coef(new_elastic,s = cv.elastic$lambda.min) != 0)
+ df_elastic <- data.frame(
+        feature=rownames(coef(new_elastic, s=cv.elastic$lambda.min))[ind],
+        coeficient=(coef(new_elastic, s=cv.elastic$lambda.min))[ind])
+ df_elastic
+ pred_elastic<-predict(new_elastic,xx,type = "class")
+ y<-confusionMatrix(pred_elastic,test_datanew1$X1)
+ overall<-y$overall
+ overall.accuracy <- overall['Accuracy']
+ print(i)
+ print(overall.accuracy)
+```
