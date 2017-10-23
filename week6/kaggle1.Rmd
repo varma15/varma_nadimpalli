@@ -1,0 +1,621 @@
+#Read the data 
+
+```{r}
+
+rm(list = ls())
+getwd()
+setwd("~/Desktop/kaggle/Porto Seguro???s Safe Driver Prediction")
+traindata<-read.csv("~/Desktop/kaggle/Porto Seguro???s Safe Driver Prediction/train.csv",header = T,sep=",")
+testdata<-read.csv("~/Desktop/kaggle/Porto Seguro???s Safe Driver Prediction/test.csv",header = T,sep=",")
+table(traindata$target)
+```
+# outlier analysis
+```{r}
+# Calculate Mahalanobis with predictor variables
+    # Remove SalePrice Variable
+m_dist <- mahalanobis(spamdata[,1:58], colMeans(spamdata[,1:58]), cov(spamdata[,1:58]))
+spamdata$MD <- round(m_dist, 1)
+spamdata$outlier<- ifelse(spamdata$MD > 220, "Yes","No")    # Threshold set to 20
+table(spamdata$outlier)
+str(spamdata)
+ind <-(which(spamdata$X0.25!=spamdata$X0.23))
+ind
+spamdata[ind,59]<-1
+ind1<-which(spamdata$outlier=="Yes")
+spamdata[ind1,1:58]<-NA
+sum(is.na(spamdata))
+str(spamdata)
+library(DMwR)
+spamdata$outlier<-as.factor(spamdata$outlier)
+spamdata$X1<-as.factor(spamdata$X1)
+
+spamdata<-knnImputation(spamdata,k=4000)
+spamdata<-na.omit(spamdata)
+spamdata<-subset(spamdata,select=-c(outlier,MD))
+str(spamdata)
+```
+#Bar plots of the data.
+```{r}
+par(mfrow=c(1,1))
+counts <- table(X1,X0.1)
+par(mfrow=c(1,2))#to show 2 charts at a time
+par(mfrow=c(1,1))
+barplot(table(spamdata$X1),main="number of spam and not spam")
+barplot(table(spamdata$X0.1))
+barplot(table(spamdata$X0))
+barplot(table(spamdata$X0.64))
+barplot(table(spamdata$X0.64.1))
+barplot(table(spamdata$X0.32))
+barplot(table(spamdata$X0.2))
+barplot(table(spamdata$X0.3))
+boxplot(spamdata$X0~spamdata$X1)
+
+cor(spamdata)
+spamdata1<-subset(spamdata,select=-c(X1))
+library(corrplot)
+corrplot(cor(spamdata1),method = "color")
+plot(spamdata$X1)X1
+#install.packages("MVN")
+library(MVN)
+library(mvoutlier)
+result <- mvOutlier(spamdata, qqplot = TRUE, method = "quan")
+library(caret)
+uni.plot(spamdata2, symb=TRUE)
+```
+#summary and structure of data
+```  {r}
+#install.packages("fBasics")
+library(fBasics)
+x<-data.frame(basicStats(spamdata))
+#write.csv(x,"descriptive statistics.csv",row.names = F)
+```
+#split the data into test and train
+``` {r}
+#install.packages("caret")
+library(caret)
+library(DMwR)
+set.seed(78)
+train_rows <- createDataPartition(traindata$target, p = 0.01, list = F)
+train_data1 <- traindata[train_rows, ]
+train_data1[train_data1 == -1] <- NA
+sum(is.na(train_data1))
+table(train_data1$target)
+train_data1<-knnImputation(train_data1,k=10)
+sum(is.na(train_data1))
+str(train_data1)
+train_rows1<-createDataPartition(train_data1$target, p = 0.7, list = F)
+train_data2<-train_data1[train_rows1,]
+test_data2<-train_data1[-train_rows1,]
+
+sum(is.na(train_data2))
+
+```
+#standardise the data
+``` {r}
+library(dummies)
+train_datanew=subset(train_data2,select=-c(target))
+test_datanew=subset(test_data2,select=-c(target))
+str(train_datanew)
+train_dummy<-(subset(train_datanew,select=c(ps_ind_02_cat,ps_ind_04_cat,ps_ind_05_cat,ps_ind_06_bin,ps_ind_07_bin,ps_ind_08_bin,ps_ind_09_bin,ps_ind_10_bin,ps_ind_11_bin,ps_ind_12_bin,ps_ind_13_bin,ps_ind_16_bin,ps_ind_17_bin,ps_ind_18_bin,ps_car_01_cat,ps_car_02_cat,ps_car_03_cat,ps_car_04_cat,ps_car_05_cat,ps_car_06_cat,ps_car_07_cat,ps_car_08_cat,ps_car_09_cat,ps_car_10_cat,ps_car_11_cat,ps_calc_15_bin,ps_calc_16_bin,ps_calc_17_bin,ps_calc_18_bin,ps_calc_19_bin,ps_calc_20_bin)))
+v<-names(train_dummy)
+v
+train_dummy[,v]<-lapply(train_dummy[,v],factor)
+test_dummy<-(subset(test_datanew,select=c(ps_ind_02_cat,ps_ind_04_cat,ps_ind_05_cat,ps_ind_06_bin,ps_ind_07_bin,ps_ind_08_bin,ps_ind_09_bin,ps_ind_10_bin,ps_ind_11_bin,ps_ind_12_bin,ps_ind_13_bin,ps_ind_16_bin,ps_ind_17_bin,ps_ind_18_bin,ps_car_01_cat,ps_car_02_cat,ps_car_03_cat,ps_car_04_cat,ps_car_05_cat,ps_car_06_cat,ps_car_07_cat,ps_car_08_cat,ps_car_09_cat,ps_car_10_cat,ps_car_11_cat,ps_calc_15_bin,ps_calc_16_bin,ps_calc_17_bin,ps_calc_18_bin,ps_calc_19_bin,ps_calc_20_bin)))
+v1<-names(test_dummy)
+v1
+test_dummy[,v1]<-lapply(test_dummy[,v1],factor)
+
+
+train_num<-(subset(train_datanew,select=-c(ps_ind_02_cat,ps_ind_04_cat,ps_ind_05_cat,ps_ind_06_bin,ps_ind_07_bin,ps_ind_08_bin,ps_ind_09_bin,ps_ind_10_bin,ps_ind_11_bin,ps_ind_12_bin,ps_ind_13_bin,ps_ind_16_bin,ps_ind_17_bin,ps_ind_18_bin,ps_car_01_cat,ps_car_02_cat,ps_car_03_cat,ps_car_04_cat,ps_car_05_cat,ps_car_06_cat,ps_car_07_cat,ps_car_08_cat,ps_car_09_cat,ps_car_10_cat,ps_car_11_cat,ps_calc_15_bin,ps_calc_16_bin,ps_calc_17_bin,ps_calc_18_bin,ps_calc_19_bin,ps_calc_20_bin)))
+std_method <- preProcess(train_num,method = c("center","scale"))
+train_num1 <- predict(std_method, train_num)
+train_num1<-as.data.frame(train_num1)
+
+
+test_num<-(subset(test_datanew,select=-c(ps_ind_02_cat,ps_ind_04_cat,ps_ind_05_cat,ps_ind_06_bin,ps_ind_07_bin,ps_ind_08_bin,ps_ind_09_bin,ps_ind_10_bin,ps_ind_11_bin,ps_ind_12_bin,ps_ind_13_bin,ps_ind_16_bin,ps_ind_17_bin,ps_ind_18_bin,ps_car_01_cat,ps_car_02_cat,ps_car_03_cat,ps_car_04_cat,ps_car_05_cat,ps_car_06_cat,ps_car_07_cat,ps_car_08_cat,ps_car_09_cat,ps_car_10_cat,ps_car_11_cat,ps_calc_15_bin,ps_calc_16_bin,ps_calc_17_bin,ps_calc_18_bin,ps_calc_19_bin,ps_calc_20_bin)))
+
+test_num1 <- predict(std_method, test_num)
+test_num1<-as.data.frame(test_num1)
+
+train_datanew1<-cbind(train_num1,train_dummy)
+test_datanew1<-cbind(test_num1,test_dummy)
+
+target<-train_data2$target
+train_datanew1<-as.data.frame(cbind(train_datanew,target))
+target<-test_data2$target
+test_datanew1<-as.data.frame(cbind(test_datanew,target))
+train_datanew1$target<-as.factor(train_datanew1$target)
+test_datanew1$target<-as.factor(test_datanew1$target)
+train_datanew1=subset(train_datanew1,select=-c(id))
+test_datanew1=subset(test_datanew1,select=-c(id))
+train_datanew1<- SMOTE(target ~ .,train_datanew1, perc.over = 500,perc.under=200)
+table(train_datanew1$target)
+str(train_datanew1)
+```
+#BEST FIT MODEL FOR CROSS VALIDATION
+``` {r}
+fitControl <- trainControl(method = "cv",number = 5,savePredictions = 'final',classProbs = F)
+```
+#run logistic model
+``` {r}
+log_reg <- glm(target~., data = train_datanew1, family = binomial,control = list(maxit=100))
+summary(log_reg)
+library(MASS)
+#list of predictions using the pred function
+prob_train <- predict(log_reg, type = "response")
+prob_train
+#Using the ROCR package create a "prediction()" object
+library(ROCR)
+library(gplots)
+pred <- prediction(prob_train, train_datanew1$target)
+pred
+#Extract performance measures (True Positive Rate and False Positive Rate) using the "performance()" function from the ROCR package
+perf <- performance(pred, measure="tpr", x.measure="fpr")
+perf
+#Plot the ROC curve using the extracted performance measures (TPR and FPR)
+
+plot(perf, col=rainbow(10), colorize=T, print.cutoffs.at=seq(0,1,0.05))
+# Extract the AUC score of the ROC curve and store it in a variable named "auc"
+perf_auc <- performance(pred, measure="auc")
+
+auc <- perf_auc@y.values[[1]]
+print(auc)
+## Predictions on test data
+#After choosing a cutoff value, predict the class labels on the test data using our model
+prob_test <- predict(log_reg, test_datanew1, type = "response")
+
+preds_test <- ifelse(prob_test > 0.05, "1", "0")
+#confusion matrix
+test_data_labs <-test_datanew1$target
+
+conf_matrix <- table(test_data_labs, preds_test)
+
+print(conf_matrix)
+#install.packages('e1071',dependencies = T)
+library(e1071)
+library(caret)
+confusionMatrix(test_data_labs,preds_test,positive = "0")
+```
+#Neural network.
+```{r}
+table(train_datanew1$target)
+library(mxnet)
+train.x = data.matrix(train_datanew1[,-58])
+train.y = as.numeric(as.character(train_datanew1[,58]))
+test.x = data.matrix(test_datanew1[,-58])
+test.y = as.numeric(as.character(test_datanew1[,58]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(10), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=20, learning.rate=0.05, momentum=0.8,eval.metric=mx.metric.accuracy)
+Sys.time() -> end
+paste(end - start)
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.5,1,0)
+confusionMatrix(pred.label1,test.y,positive = "0")
+
+```
+#SVM
+```{r}
+library(e1071)
+library(class)
+#try condensing the data before applying svm.
+keep = condense(train_datanew, train_datanew1$X1,trace=T)
+model_svmcon <- svm(target ~ . , train_datanew1[keep,], kernel = "linear")
+preds_svmcon <- predict(model_svmcon, test_datanew1)
+confusionMatrix(preds_svmcon, test_datanew1$X1,positive = "0")
+
+model_svm <- svm(target ~ . , train_datanew1, kernel = "linear")
+#class.weights = c('0'=1,'1'=16)
+summary(model_svm)
+preds_svmtrain<-predict(model_svmval, train_datanew1)
+preds_svm <- predict(model_svm, test_datanew1)
+test_lab<-test_datanew1$target
+confusionMatrix(preds_svm, test_lab,positive = "0")
+table(test_datanew1$target)
+preds_train_svm <- predict(model_svm)
+ctrl <- trainControl(method="repeatedcv",repeats = 1)
+rpart.grid <- expand.grid(C=seq(10,100,10))
+model_svmval<-train(target~.,data=train_datanew1,method='svmLinear',trControl=ctrl,tuneLength=3,tuneGrid=rpart.grid)
+#obj = tune.svm(X1 ~ . ,data=train_datanew1,cost=10:100,gamma=seq(0,3,0.1))
+preds_svm_val <- predict(model_svmval, test_datanew1)
+
+confusionMatrix(preds_svm_val, test_datanew1$target,positive = "0")
+summary(model_svmval)
+model_svmval
+rpart.grid1 <- expand.grid(C=10)
+model_svmval1<-train(target~.,data=train_datanew1,method='svmLinear',trControl=ctrl,tuneLength=3,tuneGrid=rpart.grid1)
+```
+#SVM tandoth
+```{r}
+library("pROC")
+library(e1071)
+library(kernlab)
+model_svm_th <- ksvm(target ~ . ,train_datanew1, kernel = "tanhdot")
+preds_svm_th <- predict(model_svm_th, test_datanew1)
+
+confusionMatrix(preds_svm_th, test_datanew1$target)
+svmtanh_aucplot<-plot.roc(as.numeric(test_datanew1$target),as.numeric(preds_svm_th),lwd=2,type="b",print.auc=T,col="blue",main="svmtanh")
+
+preds_train_svm_th <- predict(model_svm_th)
+
+```
+#Random Forest
+```{r}
+
+library(randomForest)
+model_rf <- randomForest(target ~ . , train_datanew1,ntrees=1500)
+varImpPlot(model_rf)
+preds_rf <- predict(model_rf, test_datanew1)
+preds_rftrain <- predict(model_rf, train_datanew1,type="prob")
+preds_rftrain2<-ifelse(preds_rftrain[,1]>preds_rftrain[,2],preds_rftrain[,1],preds_rftrain[,2])
+preds_rftest <- data.frame(predict(model_rf, test_datanew1,type="prob"))
+preds_rftest2<-ifelse(preds_rftest[,1]>preds_rftest[,2],preds_rftest[,1],preds_rftest[,2])
+preds_trainrf<-predict(model_rf, train_datanew1)
+confusionMatrix(preds_rf, test_datanew1$target)
+
+preds_train_rf <- predict(model_rf)
+ctrl <- trainControl(method="repeatedcv",repeats = 1)
+rf.grid <- expand.grid(.mtry=c(7:20))
+#model_rfval<-train(X1~.,data=train_datanew1,method='rf',trControl=ctrl,tuneLength=3,tuneGrid=rf.grid)
+#rf.grid <- expand.grid(.mtry=7)
+model_rfval<-train(target~.,data=train_datanew1,method='rf',metric='accuracy',trControl=ctrl,tuneLength=3,tuneGrid=rf.grid)
+model_rfval
+summary(model_rfval)
+preds_rftest1 <- predict(model_rfval, test_datanew1,type="prob")
+
+preds_rfvaltest<-predict(model_rfval, test_datanew1)
+confusionMatrix(preds_rfvaltest, test_datanew1$X1)
+plot(model_rfval)
+```
+#KNN classifier
+```{r}
+library(doMC)
+registerDoMC(cores=4)
+#ctrl <- trainControl(method="repeatedcv",repeats = 40)
+
+model_knncross<-train(target~.,data=train_datanew1,method='knn',  tuneGrid=expand.grid(.k=1:9),trControl=fitControl,tuneLength=3)
+#model_knncross
+plot(model_knncross)
+model_knn <- knn3(target ~ . , train_datanew1, k =1)
+preds_train_knn<-predict(model_knn,train_datanew1)
+preds_k <- predict(model_knn, test_datanew1)
+#preds_k1 <- predict(model_knncross, test_datanew1)
+preds_k2<-ifelse(preds_k[, 1] > preds_k[, 2], preds_k[, 1], preds_k[, 2])
+preds_knn <- ifelse(preds_k[, 1] > preds_k[, 2], 0, 1)
+confusionMatrix(preds_knn, test_datanew1$target)
+#confusionMatrix(preds_k1, test_datanew1$X1)
+
+
+```
+#GBM 
+```{r}
+train_datanew1$target <- as.numeric(as.character(train_datanew1$target))
+str(train_datanew1)
+test_datanew1$target <- as.numeric(as.character(test_datanew1$target))
+library(gbm)
+gbmGrid <-  expand.grid(interaction.depth = c(1, 3, 6, 9, 10),
+                        n.trees = 1500, 
+                        shrinkage = seq(.0005, .05,.005),
+                        n.minobsinnode = 10)
+#model_gbm1<-train(X1~.,data=train_datanew1,method='gbm',  tuneGrid=gbmGrid,trControl=fitControl,tuneLength=3)
+model_gbm <-gbm(target ~ . , cv.folds = 10, interaction.depth = 2,shrinkage =0.0155,distribution='bernoulli',data=train_datanew1, n.trees = 1500)
+model_gbm2 <-gbm(target ~ . , cv.folds = 10, interaction.depth = 10,shrinkage =0.0155,distribution='bernoulli',data=train_datanew1, n.trees = 1500)
+preds_train_g1 <- predict(model_gbm2, train_datanew1)
+preds_test_g2 <- predict(model_gbm2, test_datanew1)
+
+plot(model_gbm1)
+gbm.perf(model_gbm)
+gbm.perf(model_gbm2)
+
+preds_g <- predict(model_gbm, type = 'response')
+preds_g2 <- predict(model_gbm2,type = 'response')
+
+
+#install.packages("pROC")
+library(pROC)
+#install.packages("caret")
+library(caret)
+gbm_roc <- roc(train_datanew1$target, preds_g)
+gbm_roc1 <- roc(train_datanew1$target, preds_g2)
+
+cutoff_gbm <- coords(gbm_roc, "best", ret = "threshold")
+cutoff_gbm1 <- coords(gbm_roc1, "best", ret = "threshold")
+
+preds_train_gbm <- ifelse(preds_g >= cutoff_gbm, 1, 0)
+
+preds_train_gbm1 <- ifelse(preds_g2 >= cutoff_gbm1, 1, 0)
+
+preds_test_g <- predict(model_gbm, test_datanew1, type = 'response')
+preds_test_g1 <- predict(model_gbm2, test_datanew1, type = 'response')
+preds_gbm <- ifelse(preds_test_g >= cutoff_gbm, 1, 0)
+preds_gbm1 <- ifelse(preds_test_g1 >= cutoff_gbm1, 1, 0)
+
+preds_test_g 
+
+
+confusionMatrix(preds_gbm, test_datanew1$target)
+confusionMatrix(preds_gbm1, test_datanew1$target)
+
+NormalizedGini(preds_gbm,as.vector(as.numeric(test_datanew1$target)))
+NormalizedGini(preds_gbm1,as.vector(as.numeric(test_datanew1$target)))
+
+train_datanew1$target <- as.factor(as.character(train_datanew1$target))
+
+test_datanew1$target <- as.factor(as.character(test_datanew1$target))
+
+```
+#Decision trees with cross validation
+```{r}
+library(caret)
+library(rpart)
+# grow tree 
+ctrl <- trainControl(method="repeatedcv",repeats = 1)
+rpart.grid <- expand.grid(.cp=seq(0.01,.2,.01))
+model_rpart<-train(X1~.,data=train_datanew1,method='rpart',trControl=ctrl,tuneLength=3,tuneGrid=rpart.grid)
+model_rpart
+#fit <- rpart(X1 ~ ., data = train_datanew1,method="class")
+#preds_r <- predict(fit, type = 'prob')
+preds_rtrain<-predict(model_rpart,train_datanew1,type = 'prob')
+
+
+preds_r1<-predict(model_rpart,test_datanew1,type = 'prob')
+preds_r2<-ifelse(preds_r1[,1]>=preds_r1[,2],preds_r1[,1],preds_r1[,2])
+preds_train_rpart<-ifelse(preds_rtrain[,1]>=preds_rtrain[,2],0,1)
+
+#summary(fit)
+#Predict Output 
+#predicted= predict(fit,test_datanew1)
+#preds_train_dec <- ifelse(predicted[,2] >= .5, 1, 0)
+preds_train_dec1<-ifelse(preds_r1[,1]>=preds_r1[,2],0,1)
+
+#confusionMatrix(preds_train_dec, test_data_datanew1$X1)
+confusionMatrix(preds_train_dec1, test_datanew1$X1)
+model_rpart
+
+```
+#bagging 
+```{r}
+library(ipred)
+set.seed(1234)
+library(rpart)
+library(MLmetrics)
+model_tree_bag <- bagging(target ~ . , data=train_datanew1, control = rpart.control(cp = .0034, xval = 10))
+preds_tree_bag <- predict(model_tree_bag, test_datanew1)
+confusionMatrix(preds_tree_bag,test_datanew1$target)
+preds_train_tree_bag <- predict(model_tree_bag)
+NormalizedGini(preds_tree_bag,as.vector(as.numeric(test_datanew1$target)))
+```
+
+#xgboost.
+```{r}
+library(xgboost)
+library(readr)
+library(stringr)
+library(caret)
+library(car)
+xgmodel<-xgboost(data=as.matrix(train_datanew1[,-58]),label=as.numeric(train_datanew1$target),nround=20)
+y_pred<-predict(xgmodel,newdata=data.matrix(test_datanew1[,-58]))
+preds_testxg <- as.factor(ifelse(y_pred > 1.5, "1", "0"))
+z1<-as.factor(test_datanew1$target)
+confusionMatrix(preds_testxg,z1)
+
+```
+
+
+#C 5.0
+```{r}
+library(C50)
+c5_tree<-C5.0(target~.,train_datanew1,cp=100,ntrees=1500)
+c5_rules<-C5.0(target~.,train_datanew1,cp=100,ntrees=1500,rules=T)
+
+C5imp(c5_tree,metric = "usage")
+summary(c5_rules)
+plot(c5_tree)
+preds_c5<-predict(c5_tree,test_datanew1)
+confusionMatrix(preds_c5,test_datanew1$target)
+
+library(plyr)
+c50Grid <- expand.grid(.trials = c(1:9, (1:10)*10),
+                       .model = c("tree", "rules"),
+                       .winnow = c(TRUE, FALSE))
+c5_besttree <- train(target ~ .,
+                     data = train_datanew1,
+                     method = "C5.0",
+                     tuneGrid = c50Grid,
+                     trControl = fitControl,
+                     metric = "Accuracy",
+                     importance=TRUE)
+c5_besttree
+preds_c5new<-predict(c5_besttree,train_datanew1)
+confusionMatrix(preds_c5new,train_datanew1$target)
+preds_c5new<-predict(c5_besttree,test_datanew1)
+confusionMatrix(preds_c5new,test_datanew1$target)
+
+c5_besttree$finalModel$tuneValue
+c5best<-predict(c5_besttree)
+```
+
+
+#TAKING AVERAGE OF PREDICTIONS.
+```{r}
+
+test_datanew12<-data.frame((preds_rftest+preds_k)/2)
+test_datanew13<-ifelse(test_datanew12[,1]>test_datanew12[,2],'0','1')
+confusionMatrix(test_datanew13, test_datanew1$X1)
+
+
+```
+#TAKING MAJORITY VOTING OF PREICTIONS.
+```{r}
+test_datanew_majority<-ifelse(preds_gbm=='1' & preds_test=='1','1',ifelse(preds_gbm=='1' & preds_rf=='1','1','0'))
+test_datanew_majority1<-ifelse(preds_gbm=='1' & preds_c5new=='1','1',ifelse(preds_gbm=='1' & preds_rf=='1','1','0'))
+test_datanew_majority2<-ifelse(pred.label1=='1' & preds_rfvaltest=='1','1',ifelse(pred.label1=='1' & preds_rf=='1','1','0'))
+test_datanew_majority3<-ifelse(pred.label1=='1' & preds_rfvaltest=='1','1',ifelse(pred.label1=='1' & test_datanew13=='1','1','0'))
+test_datanew_majority3<-ifelse(pred.label1=='1' & preds_rfvaltest=='1','1',ifelse(pred.label1=='1' & test_datanew13=='1','1','0'))
+test_datanew_majority4<-ifelse(pred.label1=='1' & preds_train_dec1=='1','1',ifelse(pred.label1=='1' & test_datanew13=='1','1','0'))
+test_datanew_majority5<-ifelse(pred.label1=='1' & preds_gbm=='1','1',ifelse(pred.label1=='1' & test_datanew13=='1','1','0'))
+test_datanew_majority6<-ifelse(pred.label1=='1' & test_datanewaverage1=='1','1',ifelse(pred.label1=='1' & test_datanew13=='1','1','0'))
+test_datanew_majority7<-ifelse(preds_gbm=='1' & test_datanewstack=='1','1',ifelse(preds_gbm=='1' & preds_rf=='1','1','0'))
+test_datanew_majority8<-ifelse(pred.label1=='1' & preds_rfvaltest=='1','1',ifelse(pred.label1=='1' & test_datanewstack15=='1','1','0'))
+test_datanew_majority9<-ifelse(preds_gbm=='1' & preds_rfvaltest=='1','1',ifelse(preds_gbm=='1' & test_datanewstack15=='1','1','0'))
+test_datanew_majority10<-ifelse(preds_gbm=='1' & test_datanew_majority9=='1','1',ifelse(preds_gbm=='1' & test_datanewstack15=='1','1','0'))
+test_datanew_majority11<-ifelse(preds_rfvaltest=='1' & test_datanew_majority9=='1','1',ifelse(preds_rfvaltest=='1' & test_datanewstack15=='1','1','0'))
+test_datanew_majority12<-ifelse(preds_rfvaltest=='1' & test_datanewstack=='1','1',ifelse(preds_rfvaltest=='1' & test_datanewstack15=='1','1','0'))
+test_datanew_majority13<-ifelse(test_datanew_majority4=='1' & test_datanew_majority5=='1','1',ifelse(test_datanew_majority4=='1' & test_datanew_majority6=='1','1','0'))
+test_datanew_majority14<-ifelse(test_datanew_majority12=='1' & test_datanew_majority13=='1','1',ifelse(test_datanew_majority12=='1' & test_datanew_majority11=='1','1','0'))
+confusionMatrix(test_datanew_majority, test_datanew1$X1)#MAJORITY VOTING WITH GBM,GLM AND RANDOM FOREST
+confusionMatrix(test_datanew_majority1, test_datanew1$X1)#MAJORITY VOTING WITH RANDOM FOREST,RANDOM FOREST WITH TUNING,GBM
+confusionMatrix(test_datanew_majority2, test_datanew1$X1)
+confusionMatrix(test_datanew_majority3, test_datanew1$X1)
+confusionMatrix(test_datanew_majority4, test_datanew1$X1)
+confusionMatrix(test_datanew_majority5, test_datanew1$X1)
+confusionMatrix(test_datanew_majority6, test_datanew1$X1)
+confusionMatrix(test_datanew_majority7, test_datanew1$X1)
+confusionMatrix(test_datanew_majority8, test_datanew1$X1)
+confusionMatrix(test_datanew_majority9, test_datanew1$X1)
+confusionMatrix(test_datanew_majority10, test_datanew1$X1)
+confusionMatrix(test_datanew_majority11, test_datanew1$X1)
+confusionMatrix(test_datanew_majority12, test_datanew1$X1)
+confusionMatrix(test_datanew_majority13, test_datanew1$X1)
+confusionMatrix(test_datanew_majority14, test_datanew1$X1)
+
+
+
+preds_train_dec1
+```
+#TAKING WEIGHTED AVERAGE OF PREDICTIONS.
+```{r}
+test_dataaverage<-data.frame((preds_rftest*.5+preds_k*.25+preds_r1*.25))
+test_datanewaverage1<-ifelse(test_dataaverage[,1]>0.5,'0','1')
+
+confusionMatrix(test_datanewaverage1, test_datanew1$X1)
+
+```
+#STACKING WITH GBM AS TOP LAYER MODEL
+```{r}
+
+```
+#STACKING WITH GLM and GBM AS TOP LAYER MODEL
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train_rpart, tree_bag = preds_train_tree_bag,gbm = preds_train_g2, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_train_dec1, tree_bag = preds_tree_bag,gbm=preds_test_g2,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+
+stack_df$X1 <- as.factor(stack_df$X1)
+numeric_st_df <- sapply(stack_df[, !(names(stack_df) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack <- prcomp(numeric_st_df, scale = F)
+predicted_stack <- as.data.frame(predict(pca_stack, numeric_st_df))[1:7]
+stacked_df <- data.frame(predicted_stack, X1 = stack_df[, (names(stack_df) %in% "X1")])
+#stacked_model <- svm(X1 ~ . , stacked_df, kernel = "linear")
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+stacked_model<-gbm(X1 ~ . , cv.folds = 10, interaction.depth = 2,shrinkage =0.0155,distribution='bernoulli',data=stacked_df,n.trees = 1500)
+#stacked_model <- glm(X1~., data = stacked_df, family = binomial,control = list(maxit=100))
+test_preds_df$X1 <- as.factor(test_preds_df$X1)
+numeric_st_df_test <- sapply(test_preds_df[, !(names(test_preds_df) %in% "X1")],
+                             function(x) as.numeric(as.character(x)))
+predicted_stack_test <- as.data.frame(predict(pca_stack, numeric_st_df_test))[1:7]
+
+stacked_df_test <- data.frame(predicted_stack_test, X1 = test_preds_df[, (names(test_preds_df) %in% "X1")])
+
+preds_st_test <-  predict(stacked_model, stacked_df_test,type="response")
+#preds_st_test <- ifelse(preds_st_test > 0.450, "1", "0")
+
+confusionMatrix(preds_st_test, test_datanew1$X1)
+
+```
+
+
+```
+STACKING WITH SVM AND RANDOM FOREST ON TOP
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train_rpart, tree_bag = preds_train_tree_bag,gbm = preds_train_g2,c5 = preds_c5, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_train_dec1, tree_bag = preds_tree_bag,gbm=preds_test_g2,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+
+stack_df$X1 <- as.factor(stack_df$X1)
+numeric_st_df <- sapply(stack_df[, !(names(stack_df) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack <- prcomp(numeric_st_df, scale = F)
+predicted_stack <- as.data.frame(predict(pca_stack, numeric_st_df))[1:7]
+stacked_df <- data.frame(predicted_stack, X1 = stack_df[, (names(stack_df) %in% "X1")])
+#stacked_model <- svm(X1 ~ . , stacked_df, kernel = "linear")
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+test_preds_df$X1 <- as.factor(test_preds_df$X1)
+numeric_st_df_test <- sapply(test_preds_df[, !(names(test_preds_df) %in% "X1")],
+                             function(x) as.numeric(as.character(x)))
+predicted_stack_test <- as.data.frame(predict(pca_stack, numeric_st_df_test))[1:7]
+
+stacked_df_test <- data.frame(predicted_stack_test, X1 = test_preds_df[, (names(test_preds_df) %in% "X1")])
+
+preds_st_test <-  predict(stacked_model, stacked_df_test)
+
+confusionMatrix(preds_st_test, test_datanew1$X1)
+
+```
+
+#stacking with c5 included with svm, random forest on top.
+```{r}
+1<-preds_svmtrain
+2<-preds_train_rf
+3<-preds_train_knn
+4<-preds_train_rpart
+5<-preds_train_tree_bag
+6<-preds_train_g2
+7<-c5_best
+train_preds_df1 <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train_rpart, tree_bag = preds_train_tree_bag,gbm = preds_train_g2,c5=c5best, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df1<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_train_dec1, tree_bag = preds_tree_bag,gbm=preds_test_g2,c5 =preds_c5new,X1 = test_datanew1$X1)
+stack_df1 <- rbind(train_preds_df1)
+
+stack_df1$X1 <- as.factor(stack_df1$X1)
+numeric_st_df1 <- sapply(stack_df1[, !(names(stack_df1) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack1 <- prcomp(numeric_st_df1, scale = F)
+predicted_stack1 <- as.data.frame(predict(pca_stack1, numeric_st_df1))[1:7]
+stacked_df1 <- data.frame(predicted_stack1, X1 = stack_df1[, (names(stack_df1) %in% "X1")])
+#stacked_model1 <- svm(X1 ~ . , stacked_df1, kernel = "linear")
+stacked_model1 <- randomForest(X1 ~ . , stacked_df1, ntrees=1500)
+#stacked_model1 <- randomForest(X1 ~ . , stacked_df1, ntrees=1500)
+test_preds_df1$X1 <- as.factor(test_preds_df1$X1)
+numeric_st_df_test1 <- sapply(test_preds_df1[, !(names(test_preds_df1) %in% "X1")],
+                             function(x) as.numeric(as.character(x)))
+predicted_stack_test1 <- as.data.frame(predict(pca_stack1, numeric_st_df_test1))[1:7]
+
+stacked_df_test1 <- data.frame(predicted_stack_test1, X1 = test_preds_df1[, (names(test_preds_df1) %in% "X1")])
+
+preds_st_test1 <-  predict(stacked_model1, stacked_df_test1)
+
+confusionMatrix(preds_st_test1, test_datanew1$X1)
+```
+#stacking with c5 included with glm, gbm on top.
+```{r}
+
+train_preds_df2 <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train_rpart, tree_bag = preds_train_tree_bag,gbm = preds_train_g2,c5=c5best, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df2<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_train_dec1, tree_bag = preds_tree_bag,gbm=preds_test_g2,c5 =preds_c5new,X1 = test_datanew1$X1)
+stack_df2 <- rbind(train_preds_df2)
+
+stack_df2$X1 <- as.factor(stack_df2$X1)
+numeric_st_df2 <- sapply(stack_df2[, !(names(stack_df2) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack2 <- prcomp(numeric_st_df2, scale = F)
+predicted_stack2 <- as.data.frame(predict(pca_stack2, numeric_st_df2))[1:7]
+stacked_df2 <- data.frame(predicted_stack2, X1 = stack_df2[, (names(stack_df2) %in% "X1")])
+#stacked_model2 <- svm(X1 ~ . , stacked_df, kernel = "linear")
+#stacked_model2 <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+stacked_model2<-gbm(X1 ~ . , cv.folds = 10, interaction.depth = 2,shrinkage =0.0155,distribution='bernoulli',data=stacked_df2, n.trees = 1500)
+#stacked_model2 <- glm(X1~., data = stacked_df2, family = binomial,control = list(maxit=100))
+test_preds_df2$X1 <- as.factor(test_preds_df2$X1)
+numeric_st_df_test2 <- sapply(test_preds_df2[, !(names(test_preds_df2) %in% "X1")],
+                             function(x) as.numeric(as.character(x)))
+predicted_stack_test2 <- as.data.frame(predict(pca_stack2, numeric_st_df_test2))[1:7]
+
+stacked_df_test2 <- data.frame(predicted_stack_test2, X1 = test_preds_df2[, (names(test_preds_df2) %in% "X1")])
+
+preds_st_test2 <-  predict(stacked_model2, stacked_df_test2,type="response")
+#preds_st_test2 <- ifelse(preds_st_test > 0.450, "1", "0")
+
+confusionMatrix(preds_st_test2, test_datanew1$X1)
+```
