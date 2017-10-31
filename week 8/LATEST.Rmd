@@ -1,0 +1,1019 @@
+#Read the data 
+
+```{r}
+rm(list = ls())
+getwd()
+setwd("~/Downloads/spambase")
+spamdata<-read.csv("~/Downloads/spambase/spamdata2.csv",header = T,sep=",")
+str(spamdata)
+
+```
+#missing values
+```{r}
+# Calculate Mahalanobis with predictor variables
+spamdata <- spamdata[, -1]    # Remove SalePrice Variable
+#m_dist <- mahalanobis(spamdata[,c("X0.778","X0.44","X0.38","X0.32.1","X0.96","X61","X278","X0.3","X0.32","X0.4")], colMeans(spamdata[,c("X0.778","X0.44","X0.38","X0.32.1","X0.96","X61","X278","X0.3","X0.32","X0.4")]), cov(spamdata[,c("X0.778","X0.44","X0.38","X0.32.1","X0.96","X61","X278","X0.3","X0.32","X0.4")]))
+m_dist <- mahalanobis(spamdata[,1:57], colMeans(spamdata[,1:57]), cov(spamdata[,1:57]))
+spamdata$MD <- round(m_dist, 1)
+spamdata$outlier<- ifelse(spamdata$MD > 330, "Yes","No")    # Threshold set to 20
+table(spamdata$outlier)
+str(spamdata)
+ind <-(which(spamdata$X0.25!=spamdata$X0.23))
+ind
+spamdata[ind,59]<-1
+ind1<-which(spamdata$outlier=="Yes")
+spamdata[ind1,1:57]<-NA
+sum(is.na(spamdata))
+str(spamdata)
+library(DMwR)
+spamdata$outlier<-as.factor(spamdata$outlier)
+spamdata$X1<-as.factor(spamdata$X1)
+
+spamdata<-knnImputation(spamdata,k=2500)
+spamdata<-na.omit(spamdata)
+spamdata<-subset(spamdata,select=-c(outlier,MD))
+str(spamdata)
+```
+#Bar plots of the data.
+```{r}
+par(mfrow=c(1,1))
+counts <- table(X1,X0.1)
+par(mfrow=c(1,2))#to show 2 charts at a time
+par(mfrow=c(1,1))
+barplot(table(spamdata$X1),main="number of spam and not spam")
+barplot(table(spamdata$X0.1))
+barplot(table(spamdata$X0))
+barplot(table(spamdata$X0.64))
+barplot(table(spamdata$X0.64.1))
+barplot(table(spamdata$X0.32))
+barplot(table(spamdata$X0.2))
+barplot(table(spamdata$X0.3))
+boxplot(spamdata$X0~spamdata$X1)
+
+cor(spamdata)
+spamdata1<-subset(spamdata,select=-c(X1))
+library(corrplot)
+corrplot(cor(spamdata1),method = "color")
+plot(spamdata$X1)X1
+#install.packages("MVN")
+library(MVN)
+library(mvoutlier)
+result <- mvOutlier(spamdata, qqplot = TRUE, method = "quan")
+library(caret)
+uni.plot(spamdata2, symb=TRUE)
+```
+#summary and structure of data
+```{r}
+#install.packages("fBasics")
+library(fBasics)
+x<-data.frame(basicStats(spamdata))
+#write.csv(x,"descriptive statistics.csv",row.names = F)
+```
+#class variable into factor.
+```{r}
+spamdata$X1<-as.factor(spamdata$X1)
+str(spamdata)
+```
+#split the data into test and train
+```{r}
+#install.packages("caret")
+library(caret)
+set.seed(2)
+train_rows <- createDataPartition(spamdata$X1, p = 0.7, list = F)
+train_data <- spamdata[train_rows, ]
+test_data <- spamdata[-train_rows, ]
+```
+#standardise data
+```{r}
+train_datanew=subset(train_data,select=-c(X1,X0.9,X0.19,X0.23))
+test_datanew=subset(test_data,select=-c(X1,X0.9,X0.19,X0.23))
+
+
+std_method <- preProcess(train_datanew,method = c("center","scale"))
+
+train_datanew <- predict(std_method, train_datanew)
+train_datanew<-as.data.frame(train_datanew)
+
+test_datanew <- predict(std_method, test_datanew)
+test_datanew<-as.data.frame(test_datanew)
+
+X1<-train_data$X1
+train_datanew1<-as.data.frame(cbind(train_datanew,X1))
+X1<-test_data$X1
+test_datanew1<-as.data.frame(cbind(test_datanew,X1))
+```
+#Lasso (X0.23 is zero)
+```{r}
+library(glmnet)
+x=model.matrix(train_datanew1$X1~.,train_datanew1)
+model=glmnet(x,train_datanew1$X1,family = "binomial")
+plot(model)
+model
+cv.model<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="binomial")
+plot(cv.model)
+cv.model$lambda.min
+newmodel=glmnet(x,train_datanew1$X1,family = "binomial",lambda = cv.model$lambda.min,type.multinomial="grouped")
+newmodel
+coef=coef(newmodel,s = cv.model$lambda.min)
+ ind <- which(coef!= 0)
+ df_lass0 <- data.frame(
+        feature=rownames(coef(newmodel, s=cv.model$lambda.min))[ind],
+        coeficient=(coef(newmodel, s=cv.model$lambda.min))[ind])
+ df_lass0
+ xx=model.matrix(test_datanew1$X1~.,test_datanew1)
+pred<-predict(newmodel,xx,type = "class")
+confusionMatrix(pred,test_datanew1$X1)
+ridge=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = 0)
+cv.ridge<-cv.glmnet(x,train_datanew1$X1,type.measure="class",grouped=TRUE,parallel=TRUE,nfolds=5,family="multinomial",alpha=0)
+cv.ridge$lambda.min
+new_ridge=glmnet(x,train_datanew1$X1,family = "binomial",type.multinomial = "grouped",alpha = 0,lambda =cv.ridge$lambda.min )
+coef_ridge=as.data.frame(as.matrix(coef(new_ridge,s = cv.ridge$lambda.min)))
+ ind <- which(coef_ridge != 0)
+ ind
+ df_ridge <- data.frame(feature=rownames(coef(new_ridge, s=cv.ridge$lambda.min))[ind],coeficient=(coef(new_ridge, s=cv.ridge$lambda.min))[ind])
+
+ df_ridge
+ pred_ridge<-predict(new_ridge,xx,type = "class")
+confusionMatrix(pred_ridge,test_datanew1$X1)
+```
+
+
+#BEST FIT MODEL FOR CROSS VALIDATION
+```{r}
+fitControl <- trainControl(method = "cv",number = 5,savePredictions = 'final',classProbs = F)
+```
+#run logistic model
+```{r}
+attach(spamdata)
+log_reg <- glm(X1~., data = train_datanew1, family = binomial,control = list(maxit=100))
+summary(log_reg)
+library(MASS)
+#list of predictions using the pred function
+prob_train <- predict(log_reg, type = "response")
+prob_train
+#Using the ROCR package create a "prediction()" object
+library(ROCR)
+library(gplots)
+pred <- prediction(prob_train, train_datanew1$X1)
+pred
+#Extract performance measures (True Positive Rate and False Positive Rate) using the "performance()" function from the ROCR package
+perf <- performance(pred, measure="tpr", x.measure="fpr")
+perf
+#Plot the ROC curve using the extracted performance measures (TPR and FPR)
+
+plot(perf, col=rainbow(10), colorize=T, print.cutoffs.at=seq(0,1,0.05))
+# Extract the AUC score of the ROC curve and store it in a variable named "auc"
+perf_auc <- performance(pred, measure="auc")
+
+auc <- perf_auc@y.values[[1]]
+print(auc)
+## Predictions on test data
+ #After choosing a cutoff value, predict the class labels on the test data using our model
+prob_train <- predict(log_reg, train_datanew1, type = "response")
+
+prob_test <- predict(log_reg, test_datanew1, type = "response")
+
+preds_train <- ifelse(prob_train > 0.4, "1", "0")
+preds_test <- ifelse(prob_test > 0.4, "1", "0")
+#confusion matrix
+
+train_data_labs <-train_datanew1$X1
+test_data_labs <-test_datanew1$X1
+
+conf_matrix <- table(train_data_labs, preds_train)
+conf_matrix <- table(test_data_labs, preds_test)
+
+print(conf_matrix)
+#install.packages('e1071',dependencies = T)
+library(e1071)
+library(caret)
+confusionMatrix(train_data_labs,preds_train,positive = "0")
+confusionMatrix(test_data_labs,preds_test,positive = "0")
+```
+#Neural network.
+```{r}
+
+library(mxnet)
+train.x = data.matrix(train_datanew1[,-55])
+train.y = as.numeric(as.character(train_datanew1[,55]))
+test.x = data.matrix(test_datanew1[,-55])
+test.y = as.numeric(as.character(test_datanew1[,55]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label2<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label2),as.factor(test.y),positive = "0")
+
+```
+#SVM
+```{r}
+library(e1071)
+
+model_svm <- svm(X1 ~ . , train_datanew1, kernel = "linear",class.weights = c('0'=.8,'1'=1))
+summary(model_svm)
+preds_svmtrain<-predict(model_svm, train_datanew1)
+confusionMatrix(preds_svmtrain, train_datanew1$X1,positive = "0")
+preds_train_svm <- predict(model_svm)
+
+
+preds_svm <- predict(model_svm, test_datanew1)
+test_lab<-test_datanew1$X1
+confusionMatrix(preds_svm, test_lab,positive = "0")
+preds_train_svm <- predict(model_svm)
+ctrl <- trainControl(method="repeatedcv",repeats = 1,search="grid")
+rpart.grid <- expand.grid(C=seq(10))
+model_svmval<-train(X1~.,data=train_datanew1,method='svmLinear',trControl=ctrl,tuneGrid=rpart.grid)
+#obj = tune.svm(X1 ~ . ,data=train_datanew1,cost=10:100,gamma=seq(0,3,0.1))
+preds_svm_val <- predict(model_svmval, test_datanew1)
+preds_svm_val1 <- predict(model_svmval, train_datanew1)
+
+confusionMatrix(preds_svm_val1, train_datanew1$X1,positive = "0")
+confusionMatrix(preds_svm_val, test_datanew1$X1,positive = "0")
+summary(model_svmval)
+model_svmval
+#rpart.grid1 <- expand.grid(C=30)
+#model_svmval1<-train(X1~.,data=train_datanew1,method='svmLinear',trControl=ctrl,tuneLength=3,tuneGrid=rpart.grid1)
+```
+#SVM tandoth
+```{r}
+library("pROC")
+library(e1071)
+library(kernlab)
+model_svm_th <- ksvm(X1 ~ . ,train_datanew1, kernel = "tanhdot")
+preds_svm_th <- predict(model_svm_th, test_datanew1)
+
+confusionMatrix(preds_svm_th, test_datanew1$X1)
+svmtanh_aucplot<-plot.roc(as.numeric(test_datanew1$X1),as.numeric(preds_svm_th),lwd=2,type="b",print.auc=T,col="blue",main="svmtanh")
+
+preds_train_svm_th <- predict(model_svm_th)
+
+```
+#Random Forest
+```{r}
+
+library(randomForest)
+model_rf <- randomForest(X1 ~ . , train_datanew1,ntrees=1500)
+varImpPlot(model_rf)
+preds_rf <- predict(model_rf, test_datanew1)
+preds_rftrain <- predict(model_rf, train_datanew1,type="prob")
+preds_rftrain2<-ifelse(preds_rftrain[,1]>preds_rftrain[,2],preds_rftrain[,1],preds_rftrain[,2])
+preds_rftest <- data.frame(predict(model_rf, test_datanew1,type="prob"))
+preds_rftest2<-ifelse(preds_rftest[,1]>preds_rftest[,2],preds_rftest[,1],preds_rftest[,2])
+preds_trainrf<-predict(model_rf, train_datanew1)
+
+confusionMatrix(preds_trainrf, train_datanew1$X1)
+confusionMatrix(preds_rf, test_datanew1$X1)
+
+preds_train_rf <- predict(model_rf)
+ctrl <- trainControl(method="repeatedcv",repeats = 1)
+rf.grid <- expand.grid(.mtry=7)
+model_rfval<-train(X1~.,data=train_datanew1,method='rf',trControl=ctrl,tuneGrid=rf.grid)
+#rf.grid <- expand.grid(.mtry=7)
+#model_rfval<-train(X1~.,data=train_datanew1,method='rf',trControl=ctrl,tuneGrid=rf.grid)
+model_rfval
+summary(model_rfval)
+preds_rfvaltrain <- predict(model_rfval, train_datanew1)
+preds_rftest1 <- predict(model_rfval, test_datanew1)
+preds_rfvaltest<-predict(model_rfval, test_datanew1)
+confusionMatrix(preds_rfvaltrain, train_datanew1$X1)
+confusionMatrix(preds_rfvaltest, test_datanew1$X1)
+
+```
+#KNN classifier
+```{r}
+library(doMC)
+registerDoMC(cores=4)
+ctrl <- trainControl(method="repeatedcv",repeats = 2)
+model_knncross<-train(X1~.,data=train_datanew1,method='knn',  tuneGrid=expand.grid(.k=1:9),trControl=fitControl,tuneLength=3)
+#model_knncross
+plot(model_knncross)
+model_knn <- knn3(X1 ~ . , train_datanew1, k =8)
+model_knn
+preds_train_knn<-predict(model_knn,train_datanew1)
+preds_k2<-ifelse(preds_train_knn[, 1] > preds_train_knn[, 2], preds_train_knn[, 1], preds_train_knn[, 2])
+preds_knn1 <- ifelse(preds_train_knn[, 1] > preds_train_knn[, 2], 0, 1)
+preds_k <- predict(model_knn, test_datanew1)
+#preds_k1 <- predict(model_knncross, test_datanew1)
+preds_k2<-ifelse(preds_k[, 1] > preds_k[, 2], preds_k[, 1], preds_k[, 2])
+preds_knn <- ifelse(preds_k[, 1] > preds_k[, 2], 0, 1)
+
+confusionMatrix(preds_knn1, train_datanew1$X1)
+confusionMatrix(preds_knn, test_datanew1$X1)
+#confusionMatrix(preds_k1, test_datanew1$X1)
+
+
+```
+#GBM 
+```{r}
+train_datanew1$X1 <- as.numeric(as.character(train_datanew1$X1))
+str(train_datanew1)
+test_datanew1$X1 <- as.numeric(as.character(test_datanew1$X1))
+library(gbm)
+gbmGrid <-  expand.grid(interaction.depth = c(1, 3, 6, 9, 10),
+                    n.trees = 1500, 
+                    shrinkage = seq(.0005, .05,.005),
+                    n.minobsinnode = 10)
+model_gbm1<-train(X1~.,data=train_datanew1,method='gbm',  tuneGrid=gbmGrid,trControl=fitControl)
+model_gbm <-gbm(X1 ~ . , cv.folds = 10, interaction.depth = 10,shrinkage =0.0255,distribution='bernoulli',data=train_datanew1, n.trees = 1500,bag.fraction = 0.4)
+gbm.perf(model_gbm)
+preds_g <- predict(model_gbm, type = 'response')
+#install.packages("pROC")
+library(pROC)
+#install.packages("caret")
+library(caret)
+gbm_roc <- roc(train_datanew1$X1, preds_g)
+cutoff_gbm <- coords(gbm_roc, "best", ret = "threshold")
+preds_train_gbm <- ifelse(preds_g >= cutoff_gbm, 1, 0)
+
+preds_test_g <- predict(model_gbm, test_datanew1, type = 'response')
+preds_gbm <- ifelse(preds_test_g >= cutoff_gbm, 1, 0)
+
+confusionMatrix(preds_train_gbm,train_datanew1$X1)
+confusionMatrix(preds_gbm, test_datanew1$X1)
+
+```
+
+```{r}
+
+model_gbm2 <-gbm(X1 ~ . , cv.folds =10, interaction.depth = 10,shrinkage =0.015,distribution='bernoulli',data=train_datanew1, n.trees = 1500, n.minobsinnode = 10)
+preds_train_g2 <- predict(model_gbm2, train_datanew1)
+preds_test_g2 <- predict(model_gbm2, test_datanew1)
+
+plot(model_gbm2)
+
+gbm.perf(model_gbm2)
+preds_g2 <- predict(model_gbm2,type = 'response')
+#confusionMatrix(preds_g1, test_datanew1$X1)
+gbm_roc1 <- roc(train_datanew1$X1, preds_g2)
+cutoff_gbm1 <- coords(gbm_roc1, "best", ret = "threshold")
+preds_train_gbm1 <- ifelse(preds_g2 >= cutoff_gbm1, 1, 0)
+
+preds_test_g1 <- predict(model_gbm2, test_datanew1, type = 'response')
+preds_gbm1 <- ifelse(preds_test_g1 >= cutoff_gbm1, 1, 0)
+preds_test_g 
+
+confusionMatrix(preds_train_gbm1, train_datanew1$X1)
+confusionMatrix(preds_gbm1, test_datanew1$X1)
+train_datanew1$X1 <- as.factor(as.character(train_datanew1$X1))
+test_datanew1$X1 <- as.factor(as.character(test_datanew1$X1))
+
+```
+#Decision trees with cross validation
+```{r}
+library(caret)
+library(rpart)
+# grow tree 
+ctrl <- trainControl(method="repeatedcv",repeats =2)
+rpart.grid <- expand.grid(.cp=seq(0.01,.2,.01))
+model_rpart<-train(X1~.,data=train_datanew1,method='rpart',trControl=ctrl,tuneGrid=rpart.grid,minsplit=10,xval=10)
+model_rpart
+#fit <- rpart(X1 ~ ., data = train_datanew1,method="class")
+#preds_r <- predict(fit, type = 'prob')
+preds_rtrain<-predict(model_rpart,train_datanew1)
+preds_r1<-predict(model_rpart,test_datanew1)
+confusionMatrix(preds_rtrain, train_datanew1$X1)
+confusionMatrix(preds_r1, test_datanew1$X1)
+model_rpart
+```
+
+bagging 
+```{r}
+library(ipred)
+set.seed(1234)
+
+model_tree_bag <- bagging(X1 ~ . , data=train_datanew1, control = rpart.control(cp = .0005, xval = 10))
+preds_tree_bag <- predict(model_tree_bag, test_datanew1)
+preds_tree_bagtrain <- predict(model_tree_bag, train_datanew1)
+confusionMatrix(preds_tree_bagtrain,train_datanew1$X1)
+confusionMatrix(preds_tree_bag,test_datanew1$X1)
+
+preds_train_tree_bag <- predict(model_tree_bag)
+
+```
+# xgboost
+```{r}
+library(vegan)
+library(dummies)
+library(xgboost)
+xgmodel<-xgboost(data=as.matrix(train_datanew1[,-55]),label=as.numeric(train_datanew1$X1),nrounds=500,eta=.01,gamma=1,subsample=.5,max_depth=1500)
+y_pred<-predict(xgmodel,newdata=as.matrix(train_datanew1[,-55]))
+y_predtrain<-ifelse(y_pred>1.5,1,0)
+confusionMatrix(y_predtrain,train_datanew1$X1)
+y_pred<-predict(xgmodel,newdata=as.matrix(test_datanew1[,-55]))
+y_predtest<-ifelse(y_pred>1.5,1,0)
+confusionMatrix(y_predtest,test_datanew1$X1)
+
+```
+#C 5.0
+```{r}
+library(C50)
+c5_tree<-C5.0(X1~.,train_datanew1,cp=100,ntrees=1500,trials=100)
+c5_rules<-C5.0(X1~.,train_datanew1,cp=100,ntrees=1500,rules=T)
+preds_c5<-predict(c5_tree,test_datanew1)
+confusionMatrix(preds_c5,test_datanew1$X1)
+
+library(plyr)
+c50Grid <- expand.grid(.trials = c(1:9, (1:10)*10),
+                       .model = c("tree", "rules"),
+                       .winnow = c(TRUE, FALSE))
+c5_besttree <- train(X1 ~ .,
+                     data = train_datanew1,
+                     method = "C5.0",
+                     tuneGrid = c50Grid,
+                     trControl = fitControl,
+                     metric = "Accuracy",
+                     importance=TRUE)
+c5_besttree
+preds_c5new<-predict(c5_besttree,train_datanew1)
+confusionMatrix(preds_c5new,train_datanew1$X1)
+preds_c5new1<-predict(c5_besttree,test_datanew1)
+confusionMatrix(preds_c5new1,test_datanew1$X1)
+
+c5_besttree$finalModel$tuneValue
+c5best<-predict(c5_besttree)
+```
+#TAKING MAJORITY VOTING OF PREICTIONS.
+```{r}
+#gbm knn cart
+test_datanew_majority1<-ifelse(preds_gbm=='1' & preds_r1=='1','1',ifelse(preds_gbm=='1' & preds_k=='1','1','0'))
+train_datanew_majority1<-ifelse(preds_train_gbm=='1' & preds_train=='1','1',ifelse(preds_train_gbm=='1' & preds_train_knn=='1','1','0'))
+confusionMatrix(train_datanew_majority1, train_datanew1$X1)
+confusionMatrix(test_datanew_majority1, test_datanew1$X1)
+
+#gbm knn ann
+test_datanew_majority2<-ifelse(preds_gbm=='1' & pred.label2=='1','1',ifelse(preds_gbm=='1' & preds_k=='1','1','0'))
+train_datanew_majority2<-ifelse(preds_train_gbm=='1' & pred.label1=='1','1',ifelse(preds_train_gbm=='1' & preds_train_knn=='1','1','0'))
+confusionMatrix(train_datanew_majority2, train_datanew1$X1)
+confusionMatrix(test_datanew_majority2, test_datanew1$X1)
+
+#svm knn ann
+test_datanew_majority3<-ifelse(preds_svm=='1' & pred.label2=='1','1',ifelse(preds_svm=='1' & preds_k=='1','1','0'))
+train_datanew_majority3<-ifelse(preds_svmtrain=='1' & pred.label1=='1','1',ifelse(preds_svmtrain=='1' & preds_train_knn=='1','1','0'))
+confusionMatrix(train_datanew_majority3, train_datanew1$X1)
+confusionMatrix(test_datanew_majority3, test_datanew1$X1)
+
+# c5 knn ann
+test_datanew_majority4<-ifelse(preds_c5new1=='1' & pred.label2=='1','1',ifelse(preds_c5new1=='1' & preds_k=='1','1','0'))
+train_datanew_majority4<-ifelse(preds_c5new=='1' & pred.label1=='1','1',ifelse(preds_c5new=='1' & preds_train_knn=='1','1','0'))
+confusionMatrix(train_datanew_majority4, train_datanew1$X1)
+confusionMatrix(test_datanew_majority4, test_datanew1$X1)
+
+# c5 xgboost knn
+test_datanew_majority6<-ifelse(preds_c5new1=='1' & preds_knn=='1','1',ifelse(preds_c5new1=='1' & y_predtest=='1','1','0'))
+train_datanew_majority6<-ifelse(preds_c5new=='1' & preds_knn1=='1','1',ifelse(preds_c5new=='1' & y_predtrain=='1','1','0'))
+confusionMatrix(train_datanew_majority6, train_datanew1$X1)
+confusionMatrix(test_datanew_majority6, test_datanew1$X1)
+
+# svm knn c5
+test_datanew_majority7<-ifelse(preds_c5new1=='1' & preds_knn=='1','1',ifelse(preds_c5new1=='1' & preds_svm=='1','1','0'))
+train_datanew_majority7<-ifelse(preds_c5new=='1' & preds_knn1=='1','1',ifelse(preds_c5new=='1' & preds_svmtrain=='1','1','0'))
+confusionMatrix(train_datanew_majority7, train_datanew1$X1)
+confusionMatrix(test_datanew_majority7, test_datanew1$X1)
+
+#knn bagging svm
+test_datanew_majority8<-ifelse(preds_knn=='1' & preds_tree_bag=='1','1',ifelse(preds_knn=='1' & preds_svm=='1','1','0'))
+train_datanew_majority8<-ifelse(preds_knn1=='1' & preds_train_tree_bag=='1','1',ifelse(preds_knn1=='1' & preds_svmtrain=='1','1','0'))
+confusionMatrix(train_datanew_majority8, train_datanew1$X1)
+confusionMatrix(test_datanew_majority8, test_datanew1$X1)
+
+# knn cart bagging
+test_datanew_majority9<-ifelse(preds_knn=='1' & preds_tree_bag=='1','1',ifelse(preds_knn=='1' & preds_r1=='1','1','0'))
+train_datanew_majority9<-ifelse(preds_knn1=='1' & preds_train_tree_bag=='1','1',ifelse(preds_knn1=='1' & preds_train=='1','1','0'))
+confusionMatrix(train_datanew_majority9, train_datanew1$X1)
+confusionMatrix(test_datanew_majority9, test_datanew1$X1)
+
+```
+```{r}
+
+```
+#STACKING WITH GBM AS TOP LAYER MODEL
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train_rpart, tree_bag = preds_train_tree_bag,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_train_dec1, tree_bag = preds_tree_bag,gbm=preds_test_g2,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+
+stack_df$X1 <- as.factor(stack_df$X1)
+numeric_st_df <- sapply(stack_df[, !(names(stack_df) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack <- prcomp(numeric_st_df, scale = F)
+predicted_stack <- as.data.frame(predict(pca_stack, numeric_st_df))[1:7]
+stacked_df <- data.frame(predicted_stack, X1 = stack_df[, (names(stack_df) %in% "X1")])
+#stacked_model <- svm(X1 ~ . , stacked_df, kernel = "linear")
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+stacked_model<-gbm(X1 ~ . , cv.folds = 20, interaction.depth = 10,shrinkage =0.0205,distribution='bernoulli',data=stacked_df,n.trees = 1500)
+test_preds_df$X1 <- as.factor(test_preds_df$X1)
+numeric_st_df_test <- sapply(test_preds_df[, !(names(test_preds_df) %in% "X1")],
+                        function(x) as.numeric(as.character(x)))
+predicted_stack_test <- as.data.frame(predict(pca_stack, numeric_st_df_test))[1:7]
+
+stacked_df_test <- data.frame(predicted_stack_test, X1 = test_preds_df[, (names(test_preds_df) %in% "X1")])
+
+preds_st_test <-  predict(stacked_model, stacked_df_test)
+
+confusionMatrix(preds_st_test, test_datanew1$X1)
+
+```
+#STACKING WITH GLM AS TOP LAYER MODEL
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,gbm = preds_train_gbm,knn = preds_train_knn,tree = preds_train, tree_bag = preds_train_tree_bag, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,gbm=preds_gbm,knn = preds_k,tree =preds_r1, tree_bag = preds_tree_bag,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+
+stack_df$X1 <- as.factor(stack_df$X1)
+numeric_st_df <- sapply(stack_df[, !(names(stack_df) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack <- prcomp(numeric_st_df, scale = F)
+predicted_stack <- as.data.frame(predict(pca_stack, numeric_st_df))[1:7]
+stacked_df <- data.frame(predicted_stack, X1 = stack_df[, (names(stack_df) %in% "X1")])
+#stacked_model <- svm(X1 ~ . , stacked_df, kernel = "linear")
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+#stacked_model<-gbm(X1 ~ . , cv.folds = 20, interaction.depth = 10,shrinkage =0.0205,distribution='bernoulli',data=,stacked_df n.trees = 1500)
+stacked_model <- glm(X1~., data = stacked_df, family = binomial,control = list(maxit=100))
+preds_st_train <-  predict(stacked_model, stacked_df,type="response")
+preds_st_train <- ifelse(preds_st_train > 0.450, "1", "0")
+
+
+test_preds_df$X1 <- as.factor(test_preds_df$X1)
+numeric_st_df_test <- sapply(test_preds_df[, !(names(test_preds_df) %in% "X1")],
+                        function(x) as.numeric(as.character(x)))
+predicted_stack_test <- as.data.frame(predict(pca_stack, numeric_st_df_test))[1:7]
+
+stacked_df_test <- data.frame(predicted_stack_test, X1 = test_preds_df[, (names(test_preds_df) %in% "X1")])
+
+preds_st_test <-  predict(stacked_model, stacked_df_test,type="response")
+preds_st_test <- ifelse(preds_st_test > 0.450, "1", "0")
+
+confusionMatrix(preds_st_train, train_datanew1$X1)
+confusionMatrix(preds_st_test, test_datanew1$X1)
+
+```
+
+
+#STACKING WITH SVM AND RANDOM FOREST ON TOP
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,knn = preds_train_knn,tree = preds_train, tree_bag = preds_train_tree_bag,gbm = preds_train_gbm, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,knn = preds_k,tree =preds_r1, tree_bag = preds_tree_bag,gbm=preds_gbm,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+
+stack_df$X1 <- as.factor(stack_df$X1)
+numeric_st_df <- sapply(stack_df[, !(names(stack_df) %in% "X1")],function(x) as.numeric(as.character(x)))
+pca_stack <- prcomp(numeric_st_df, scale = F)
+predicted_stack <- as.data.frame(predict(pca_stack, numeric_st_df))[1:7]
+stacked_df <- data.frame(predicted_stack, X1 = stack_df[, (names(stack_df) %in% "X1")])
+
+ctrl <- trainControl(method="repeatedcv",repeats = 1,search="grid")
+rpart.grid <- expand.grid(C=seq(10))
+stacked_model<-train(X1~.,data=stacked_df,method='svmLinear',trControl=ctrl,tuneGrid=rpart.grid)
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+#stacked_model <- randomForest(X1 ~ . , stacked_df, ntrees=1500)
+preds_st_train <-  predict(stacked_model, stacked_df)
+
+confusionMatrix(preds_st_train, train_datanew1$X1)
+
+test_preds_df$X1 <- as.factor(test_preds_df$X1)
+numeric_st_df_test <- sapply(test_preds_df[, !(names(test_preds_df) %in% "X1")],
+                        function(x) as.numeric(as.character(x)))
+predicted_stack_test <- as.data.frame(predict(pca_stack, numeric_st_df_test))[1:7]
+
+stacked_df_test <- data.frame(predicted_stack_test, X1 = test_preds_df[, (names(test_preds_df) %in% "X1")])
+
+preds_st_test <-  predict(stacked_model, stacked_df_test)
+
+
+confusionMatrix(preds_st_train, train_datanew1$X1)
+confusionMatrix(preds_st_test, test_datanew1$X1)
+
+```
+
+1#STACKING WITH NEURAL NETWORKS ON TOP.
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,gbm = preds_train_gbm,knn = preds_train_knn,tree = preds_train, tree_bag = preds_train_tree_bag, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf=preds_rfvaltest,gbm=preds_gbm,knn = preds_k,tree =preds_r1, tree_bag = preds_tree_bag,X1 = test_datanew1$X1)
+stack_df <- rbind(train_preds_df)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-8])
+train.y = as.numeric(as.character(train_preds_df[,8]))
+test.x = data.matrix(test_preds_df[,-8])
+test.y = as.numeric(as.character(test_preds_df[,8]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+# 2stacking with neural net on top of weak learners.
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,knn = preds_train_knn,tree = preds_train, tree_bag = preds_train_tree_bag, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,knn = preds_k,tree =preds_r1, tree_bag = preds_tree_bag,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+# 3stacking with neural net on top .
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, tree_bag = preds_train_tree_bag,gbm = preds_train_gbm, X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, tree_bag = preds_tree_bag,gbm=preds_gbm,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-7])
+train.y = as.numeric(as.character(train_preds_df[,7]))
+test.x = data.matrix(test_preds_df[,-7])
+test.y = as.numeric(as.character(test_preds_df[,7]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+# 3stacking with neural net on top.
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, tree_bag = preds_train_tree_bag,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, tree_bag = preds_tree_bag,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(3), out_node=2,activation="relu", out_activation="softmax",num.round=50, array.batch.size=50, learning.rate=0.005, momentum=0.7,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.45,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.45,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+# 4 stacking with neural net on top.
+```{r}
+train_preds_df <- data.frame(svm = preds_svmtrain,rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, tree_bag = preds_train_tree_bag,gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(svm=preds_svm,rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, tree_bag = preds_tree_bag,gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-8])
+train.y = as.numeric(as.character(train_preds_df[,8]))
+test.x = data.matrix(test_preds_df[,-8])
+test.y = as.numeric(as.character(test_preds_df[,8]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+
+# 4 stacking with neural net on top.
+```{r}
+train_preds_df <- data.frame(rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.label1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.label1),as.factor(test.y),positive = "0")
+```
+
+#majority voting in neural networks.
+```{r}
+train_preds_df <- data.frame(rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.labeltrain1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltrain1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.labeltest1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltest1),as.factor(test.y),positive = "0")
+
+
+train_preds_df <- data.frame(rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=2,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.005, momentum=0.8,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.labeltrain2<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltrain2),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.labeltest2<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltest2),as.factor(test.y),positive = "0")
+
+train_datanew_majority<-ifelse(pred.labeltrain1=='1' & pred.labeltrain2=='1','1','0')
+confusionMatrix(train_datanew_majority,train_datanew1$X1,positive = "0")
+
+test_datanew_majority<-ifelse(pred.labeltest1=='1' & pred.labeltest2=='1','1','0')
+confusionMatrix(test_datanew_majority,test_datanew1$X1,positive = "0")
+
+```
+#majority voting in neural net
+```{r}
+train_preds_df <- data.frame(rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1, gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(3), out_node=2,activation="relu", out_activation="softmax",num.round=10, array.batch.size=40, learning.rate=0.005, momentum=0.9,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.labeltrain1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltrain1),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.labeltest1<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltest1),as.factor(test.y),positive = "0")
+
+
+train_preds_df <- data.frame(rf =preds_train_rf,C5 = preds_c5new,tree = preds_train, gbm = preds_train_gbm,xgboost=y_predtrain,X1 = train_datanew1$X1)
+# Getting all the predictions from the validation data into a dataframe.
+test_preds_df<- data.frame(rf = preds_rfvaltest,C5 = preds_c5new1,tree =preds_r1,gbm=preds_gbm,xgboost=y_predtest,X1 = test_datanew1$X1)
+library(mxnet)
+train.x = data.matrix(train_preds_df[,-6])
+train.y = as.numeric(as.character(train_preds_df[,6]))
+test.x = data.matrix(test_preds_df[,-6])
+test.y = as.numeric(as.character(test_preds_df[,6]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(4), out_node=2,activation="relu", out_activation="softmax",num.round=10, array.batch.size=20, learning.rate=0.005, momentum=0.1,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+pred.labeltrain2<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltrain2),as.factor(train.y),positive = "0") 
+
+preds = predict(model_mlp, test.x)
+preds=t(preds)
+pred.labeltest2<-ifelse(preds[,2]>0.55,1,0)
+confusionMatrix(as.factor(pred.labeltest2),as.factor(test.y),positive = "0")
+
+train_datanew_majority<-ifelse(pred.labeltrain1=='1' & pred.labeltrain2=='1','1','0')
+confusionMatrix(train_datanew_majority,train_datanew1$X1,positive = "0")
+
+test_datanew_majority<-ifelse(pred.labeltest1=='1' & pred.labeltest2=='1','1','0')
+confusionMatrix(test_datanew_majority,test_datanew1$X1,positive = "0")
+
+```
+
+#class weights tuning on SVM.
+```{r}
+library(e1071)
+
+model_svm <- svm(X1 ~ . , train_datanew1, kernel = "linear",class.weights = c('0'=1,'1'=1.5))
+summary(model_svm)
+preds_svmtrain<-predict(model_svm, train_datanew1)
+preds_train_svm <- predict(model_svm)
+
+preds_svm <- predict(model_svm, test_datanew1)
+test_lab<-test_datanew1$X1
+
+confusionMatrix(preds_svmtrain, train_datanew1$X1,positive = "0")
+confusionMatrix(preds_svm, test_lab,positive = "0")
+preds_train_svm <- predict(model_svm)
+
+
+```
+# Performing GBM on neural nodes.
+```{r}
+library(mxnet)
+train.x = data.matrix(train_datanew1[,-55])
+train.y = as.numeric(as.character(train_datanew1[,55]))
+test.x = data.matrix(test_datanew1[,-55])
+test.y = as.numeric(as.character(test_datanew1[,55]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(20), out_node=10,activation="relu", out_activation="softmax",num.round=20, array.batch.size=50, learning.rate=0.05, momentum=0.5,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+nodepredstrain=data.frame(cbind(preds,X1=train.y))
+preds1 = predict(model_mlp, test.x)
+preds1=t(preds1)
+nodepredstest=data.frame(cbind(preds1,X1=test.y))
+
+
+library(gbm)
+#gbmGrid <-  expand.grid(interaction.depth = c(1, 3, 6, 9, 10),n.trees =1500,shrinkage = seq(.0005, .05,.005),n.minobsinnode = 10)
+#model_gbm1<-train(X1~.,data=nodepredstrain,method='gbm',tuneGrid=gbmGrid,trControl=fitControl)
+model_gbm1
+model_gbm <-gbm(X1 ~ . , cv.folds = 10, interaction.depth = 10,shrinkage =0.0155,distribution='bernoulli',data=nodepredstrain,n.trees = 1500,bag.fraction = 0.5)
+gbm.perf(model_gbm)
+preds_g <- predict(model_gbm, type = 'response')
+#install.packages("pROC")
+library(pROC)
+#install.packages("caret")
+library(caret)
+gbm_roc <- roc(nodepredstrain$X1, preds_g)
+cutoff_gbm <- coords(gbm_roc, "best", ret = "threshold")
+preds_train_gbm <- ifelse(preds_g >= cutoff_gbm, 1, 0)
+
+preds_test_g <- predict(model_gbm, nodepredstest, type = 'response')
+preds_gbm <- ifelse(preds_test_g >= cutoff_gbm, 1, 0)
+
+confusionMatrix(preds_train_gbm, nodepredstrain$X1)
+confusionMatrix(preds_gbm, nodepredstest$X1)
+```
+#gbm on neural net nodes.
+```{r}
+library(mxnet)
+train.x = data.matrix(train_datanew1[,-55])
+train.y = as.numeric(as.character(train_datanew1[,55]))
+test.x = data.matrix(test_datanew1[,-55])
+test.y = as.numeric(as.character(test_datanew1[,55]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(3), out_node=5,activation="relu", out_activation="softmax",num.round=10, array.batch.size=50, learning.rate=0.05, momentum=0.8,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+nodepredstrain=data.frame(cbind(preds,X1=train.y))
+preds1 = predict(model_mlp, test.x)
+preds1=t(preds1)
+nodepredstest=data.frame(cbind(preds1,X1=test.y))
+
+
+library(gbm)
+gbmGrid <-  expand.grid(interaction.depth = c(1, 3, 6, 9, 10),
+                    n.trees = 1500, 
+                    shrinkage = seq(.0005, .05,.005),
+                    n.minobsinnode = 10)
+model_gbm1<-train(X1~.,data=nodepredstrain,method='gbm',tuneGrid=gbmGrid,trControl=fitControl)
+model_gbm1
+model_gbm <-gbm(X1 ~ . , cv.folds = 10, interaction.depth = 10,shrinkage =0.0105,distribution='bernoulli',data=nodepredstrain,n.trees = 1500,bag.fraction = 0.5)
+gbm.perf(model_gbm)
+preds_g <- predict(model_gbm, type = 'response')
+#install.packages("pROC")
+library(pROC)
+#install.packages("caret")
+library(caret)
+gbm_roc <- roc(nodepredstrain$X1, preds_g)
+cutoff_gbm <- coords(gbm_roc, "best", ret = "threshold")
+preds_train_gbm <- ifelse(preds_g >= cutoff_gbm, 1, 0)
+
+preds_test_g <- predict(model_gbm, nodepredstest, type = 'response')
+preds_gbm <- ifelse(preds_test_g >= cutoff_gbm, 1, 0)
+
+confusionMatrix(preds_train_gbm, nodepredstrain$X1)
+confusionMatrix(preds_gbm, nodepredstest$X1)
+```
+#random forest on neural net nodes.
+```{r}
+library(mxnet)
+train.x = data.matrix(train_datanew1[,-55])
+train.y = as.numeric(as.character(train_datanew1[,55]))
+test.x = data.matrix(test_datanew1[,-55])
+test.y = as.numeric(as.character(test_datanew1[,55]))
+mx.set.seed(98)
+Sys.time() -> start
+model_mlp <- mx.mlp(train.x, train.y, hidden_node=c(3), out_node=5,activation="relu", out_activation="softmax",num.round=10, array.batch.size=50, learning.rate=0.05, momentum=0.8,eval.metric=mx.metric.accuracy)
+ Sys.time() -> end
+ paste(end - start)
+ 
+preds = predict(model_mlp, train.x)
+preds=t(preds)
+nodepredstrain=data.frame(cbind(preds,X1=train.y))
+preds1 = predict(model_mlp, test.x)
+preds1=t(preds1)
+nodepredstest=data.frame(cbind(preds1,X1=test.y))
+
+nodepredstrain$X1<-as.factor(nodepredstrain$X1)
+nodepredstest$X1<-as.factor(nodepredstest$X1)
+
+library(randomForest)
+model_rf <- randomForest(X1 ~ . , nodepredstrain,ntrees=1500,.mtry=3)
+varImpPlot(model_rf)
+preds_rf <- predict(model_rf, nodepredstest)
+preds_rftrain <- predict(model_rf, nodepredstrain,type="prob")
+preds_rftrain2<-ifelse(preds_rftrain[,1]>preds_rftrain[,2],preds_rftrain[,1],preds_rftrain[,2])
+preds_rftest <- data.frame(predict(model_rf, nodepredstest,type="prob"))
+preds_rftest2<-ifelse(preds_rftest[,1]>preds_rftest[,2],preds_rftest[,1],preds_rftest[,2])
+preds_trainrf<-predict(model_rf, nodepredstrain)
+
+confusionMatrix(preds_trainrf, nodepredstrain$X1)
+confusionMatrix(preds_rf, nodepredstest$X1)
+```
+
+
+
+
